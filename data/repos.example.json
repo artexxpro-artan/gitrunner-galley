@@ -1,0 +1,18 @@
+[
+  {
+    "name": "owner-my-project",
+    "url": "https://github.com/owner/my-project",
+    "port": 3000,
+    "backend_port": 4000,
+    "branch": "",
+    "gitlab_target": "",
+    "github_username": "",
+    "github_token": "",
+    "docker_stack": null,
+    "auto_dockerized": false,
+    "status": "idle",
+    "last_action": "added",
+    "last_log": "Repo added. Click Run / Build.",
+    "updated_at": "2026-01-01 00:00:00"
+  }
+]

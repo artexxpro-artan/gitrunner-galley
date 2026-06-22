@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Cloned project workspaces (not part of Runner)
+repos/
+
+# Local runtime data and secrets
+data/repos.json
+data/github.json
+data/gitlab.json
+data/runner.log
+data/runner.pid

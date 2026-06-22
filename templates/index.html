@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Git Gallery Runner</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="bg-orb bg-orb-a"></div>
+  <div class="bg-orb bg-orb-b"></div>
+  <div class="bg-orb bg-orb-c"></div>
+
+  <main class="page">
+    <section class="hero card">
+      <div>
+        <h1>Git Gallery Runner</h1>
+        <p>آدرس گیت رو بده، پورت رو تنظیم کن؛ clone/pull و Docker Compose از همینجا.</p>
+      </div>
+      <div class="hero-badges">
+        <span class="badge">v{{ version }}</span>
+        <span class="badge badge-soft">localhost:8080</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <details class="settings-panel">
+        <summary>تنظیمات GitHub (private repos)</summary>
+        <div class="settings-body">
+          <form class="gitlab-form" action="/github/settings" method="post">
+            <div class="field-row">
+              <label>نام کاربری GitHub</label>
+              <input name="username" type="text" value="{{ github.username }}" placeholder="username">
+            </div>
+            <div class="field-row">
+              <label>Token / Password (کافی است — username اختیاری)</label>
+              <input name="token" type="password" value="{{ github.token }}" placeholder="github_pat_... یا ghp_...">
+            </div>
+            <p class="hint">برای ریپوی private: PAT با دسترسی <strong>Contents: Read</strong> بسازید.</p>
+            <button class="primary" type="submit">ذخیره GitHub</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="settings-panel">
+        <summary>تنظیمات GitLab</summary>
+        <div class="settings-body">
+          <form class="gitlab-form" action="/gitlab/settings" method="post">
+            <div class="field-row">
+              <label>آدرس GitLab</label>
+              <input name="url" type="url" value="{{ gitlab.url }}" placeholder="https://gitlab.com">
+            </div>
+            <div class="field-row">
+              <label>نام کاربری</label>
+              <input name="username" type="text" value="{{ gitlab.username }}" placeholder="username">
+            </div>
+            <div class="field-row">
+              <label>Token / Password</label>
+              <input name="token" type="password" value="{{ gitlab.token }}" placeholder="Personal Access Token">
+            </div>
+            <div class="field-row">
+              <label>گروه پیش‌فرض (اختیاری)</label>
+              <input name="default_group" type="text" value="{{ gitlab.default_group }}" placeholder="my-group">
+            </div>
+            <button class="primary" type="submit">ذخیره GitLab</button>
+          </form>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>اضافه کردن پروژه</h2>
+      <form class="add-form" action="/add" method="post">
+        <input class="span-2" name="url" type="url" placeholder="https://github.com/user/project.git" required>
+        <input name="branch" type="text" placeholder="برنچ (اختیاری)">
+        <input name="port" type="number" min="1024" max="65535" value="3000" placeholder="Frontend port" required>
+        <input name="backend_port" type="number" min="1024" max="65535" value="4000" placeholder="Backend port">
+        <input name="github_username" type="text" placeholder="GitHub user (اختیاری)">
+        <input name="github_token" type="password" placeholder="GitHub token (اختیاری)">
+        <input class="span-2" name="gitlab_target" type="text" placeholder="GitLab path (group/project)">
+        <button class="primary span-2" type="submit">اضافه کن</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>گالری پروژه‌ها</h2>
+      <div id="busy-hint" class="global-busy-hint">عملیات Docker در حال اجراست — لاگ پایین به‌روز می‌شود.</div>
+
+      {% if repos|length == 0 %}
+        <p class="empty">هنوز پروژه‌ای اضافه نشده.</p>
+      {% endif %}
+
+      <div class="grid" id="repo-grid">
+        {% for repo in repos %}
+          <article class="repo-card" data-repo="{{ repo.name }}" data-status="{{ repo.status }}">
+            <div class="repo-head">
+              <div>
+                <h3>{{ repo.name }}</h3>
+                <a href="{{ repo.url }}" target="_blank">{{ repo.url }}</a>
+                {% if repo.branch %}
+                  <div class="branch-tag">برنچ: {{ repo.branch }}</div>
+                {% endif %}
+                {% if repo.auto_dockerized %}
+                  <div class="branch-tag">Docker: auto-generated</div>
+                {% endif %}
+              </div>
+              <span class="status {{ repo.status }}">{{ repo.status }}</span>
+            </div>
+
+            <form class="port-form" action="/update/{{ repo.name }}" method="post">
+              <div class="port-fields">
+                <label>
+                  Frontend
+                  <input name="port" type="number" min="1024" max="65535" value="{{ repo.port | default(3000) }}">
+                </label>
+                <label>
+                  Backend
+                  <input name="backend_port" type="number" min="1024" max="65535" value="{{ repo.backend_port | default(4000) }}">
+                </label>
+                <label>
+                  برنچ
+                  <input name="branch" type="text" value="{{ repo.branch | default('') }}" placeholder="main">
+                </label>
+                <label>
+                  GitLab target
+                  <input name="gitlab_target" type="text" value="{{ repo.gitlab_target | default('') }}" placeholder="group/project">
+                </label>
+                <label>
+                  GitHub user
+                  <input name="github_username" type="text" value="{{ repo.github_username | default('') }}" placeholder="اختیاری">
+                </label>
+                <label>
+                  GitHub token
+                  <input name="github_token" type="password" value="{{ repo.github_token | default('') }}" placeholder="اختیاری">
+                </label>
+              </div>
+              <button type="submit">ذخیره تنظیمات</button>
+            </form>
+
+            <div class="actions">
+              <form action="/run/{{ repo.name }}" method="post"><button class="primary action-btn">Run / Build</button></form>
+              <form action="/refresh/{{ repo.name }}" method="post"><button class="warn action-btn">Pull + Rebuild</button></form>
+              <form action="/restart/{{ repo.name }}" method="post">
+                <input type="hidden" name="port" value="{{ repo.port | default(3000) }}">
+                <input type="hidden" name="backend_port" value="{{ repo.backend_port | default(4000) }}">
+                <button class="action-btn">Restart</button>
+              </form>
+              <a class="button-link open-link" href="http://localhost:{{ repo.port | default(3000) }}" target="_blank">باز کردن</a>
+              <form action="/ps/{{ repo.name }}" method="post"><button class="action-btn">Status</button></form>
+              <form action="/logs/{{ repo.name }}" method="post"><button class="action-btn">Logs</button></form>
+              <form action="/stop/{{ repo.name }}" method="post"><button class="danger action-btn">Stop</button></form>
+              <form action="/gitlab/push/{{ repo.name }}" method="post">
+                <input type="hidden" name="target" value="{{ repo.gitlab_target | default('') }}">
+                <button class="gitlab action-btn">Push GitLab</button>
+              </form>
+              <form action="/delete/{{ repo.name }}" method="post"><button class="ghost action-btn">Remove</button></form>
+            </div>
+
+            <div class="meta">
+              <span>آخرین عملیات: {{ repo.last_action }}</span>
+              <span>زمان: {{ repo.updated_at }}</span>
+              <span>URL: http://localhost:{{ repo.port | default(3000) }}</span>
+            </div>
+
+            <details class="log-panel" open>
+              <summary>خروجی کنسول</summary>
+              <pre class="repo-log">{% if repo.last_log %}{{ repo.last_log }}{% else %}هنوز خروجی ثبت نشده.{% endif %}</pre>
+            </details>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+  <script>
+    document.querySelectorAll(".repo-card").forEach(function (card) {
+      var portForm = card.querySelector(".port-form");
+      var restartForm = card.querySelector('form[action*="/restart/"]');
+      var openLink = card.querySelector(".open-link");
+      if (!portForm) return;
+
+      function syncPorts() {
+        var frontend = portForm.querySelector('input[name="port"]').value;
+        var backend = portForm.querySelector('input[name="backend_port"]').value;
+        if (restartForm) {
+          restartForm.querySelector('input[name="port"]').value = frontend;
+          restartForm.querySelector('input[name="backend_port"]').value = backend;
+        }
+        if (openLink) {
+          openLink.href = "http://localhost:" + frontend;
+        }
+      }
+
+      portForm.querySelectorAll("input").forEach(function (input) {
+        input.addEventListener("input", syncPorts);
+        input.addEventListener("change", syncPorts);
+      });
+
+      if (restartForm) {
+        restartForm.addEventListener("submit", syncPorts);
+      }
+    });
+
+    function hasBusyRepo() {
+      return document.querySelector('[data-status="busy"]') !== null;
+    }
+
+    function updateBusyHint() {
+      var hint = document.getElementById("busy-hint");
+      if (hint) {
+        hint.classList.toggle("show", hasBusyRepo());
+      }
+    }
+
+    document.querySelectorAll('form[action*="/run/"], form[action*="/refresh/"], form[action*="/restart/"]').forEach(function (form) {
+      form.addEventListener("submit", function () {
+        var card = form.closest(".repo-card");
+        if (card) {
+          card.setAttribute("data-status", "busy");
+          var status = card.querySelector(".status");
+          if (status) {
+            status.className = "status busy";
+            status.textContent = "busy";
+          }
+        }
+        updateBusyHint();
+        startPolling();
+      });
+    });
+
+    updateBusyHint();
+
+    var pollTimer = null;
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(function () {
+        fetch("/api/repos")
+          .then(function (r) { return r.json(); })
+          .then(function (repos) {
+            var stillBusy = repos.some(function (repo) { return repo.status === "busy"; });
+            repos.forEach(function (repo) {
+              var card = document.querySelector('[data-repo="' + repo.name + '"]');
+              if (!card) return;
+              card.setAttribute("data-status", repo.status);
+              var status = card.querySelector(".status");
+              if (status) {
+                status.className = "status " + repo.status;
+                status.textContent = repo.status;
+              }
+              var log = card.querySelector(".repo-log");
+              if (log) {
+                log.textContent = repo.last_log || "هنوز خروجی ثبت نشده.";
+              }
+              var meta = card.querySelector(".meta");
+              if (meta) {
+                meta.innerHTML =
+                  "<span>آخرین عملیات: " + (repo.last_action || "-") + "</span>" +
+                  "<span>زمان: " + (repo.updated_at || "-") + "</span>" +
+                  "<span>URL: http://localhost:" + (repo.port || 3000) + "</span>";
+              }
+            });
+            updateBusyHint();
+            if (!stillBusy) {
+              clearInterval(pollTimer);
+              pollTimer = null;
+            }
+          })
+          .catch(function () {});
+      }, 2500);
+    }
+
+    if (hasBusyRepo()) {
+      startPolling();
+    }
+  </script>
+</body>
+</html>
