@@ -18,26 +18,68 @@
         <p>آدرس گیت رو بده، پورت رو تنظیم کن؛ clone/pull و Docker Compose از همینجا.</p>
       </div>
       <div class="hero-badges">
-        <span class="badge">v{{ version }}</span>
+        <details class="version-drop">
+          <summary class="badge version-badge">v{{ version }}</summary>
+          <div class="version-panel">
+            {% for entry in version_history %}
+              <div class="version-item">
+                <div class="version-item-head">
+                  <strong>v{{ entry.version }}</strong>
+                  <span>{{ entry.date }}</span>
+                </div>
+                <ul>
+                  {% for item in entry.changes %}
+                    <li>{{ item }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
         <span class="badge badge-soft">localhost:8080</span>
       </div>
+    </section>
+
+    <section class="card git-mode-card">
+      <div class="git-mode-bar">
+        <span class="git-mode-label">منبع Git:</span>
+        <form action="/github/mode" method="post" class="git-mode-form">
+          <input type="hidden" name="mode" value="public">
+          <button type="submit" class="mode-btn{% if github.mode != 'auth' %} active{% endif %}">GitHub عمومی</button>
+        </form>
+        <form action="/github/mode" method="post" class="git-mode-form">
+          <input type="hidden" name="mode" value="auth">
+          <button type="submit" class="mode-btn{% if github.mode == 'auth' %} active{% endif %}">با توکن (Private)</button>
+        </form>
+      </div>
+      <p class="hint git-mode-hint">
+        {% if github.mode == 'auth' %}
+          حالت private — از یوزر/توکن ذخیره‌شده برای clone/pull استفاده می‌شود.
+        {% else %}
+          حالت عمومی — repoهای public بدون توکن clone/pull می‌شوند.
+        {% endif %}
+      </p>
     </section>
 
     <section class="card">
       <details class="settings-panel">
         <summary>تنظیمات GitHub (private repos)</summary>
         <div class="settings-body">
-          <form class="gitlab-form" action="/github/settings" method="post">
+          <button type="button" class="toggle-cred-btn" id="toggle-global-github-cred" aria-expanded="{% if github.mode == 'auth' and github.token %}true{% else %}false{% endif %}">
+            {% if github.mode == 'auth' and github.token %}ویرایش یوزر و توکن{% else %}فعال‌سازی یوزر و توکن{% endif %}
+          </button>
+          <form class="gitlab-form cred-form{% if github.mode == 'auth' and github.token %} show{% endif %}" id="global-github-cred-form" action="/github/settings" method="post">
+            <input type="hidden" name="enable_auth" value="1">
             <div class="field-row">
               <label>نام کاربری GitHub</label>
-              <input name="username" type="text" value="{{ github.username }}" placeholder="username">
+              <input name="username" type="text" value="{{ github.username }}" placeholder="username" disabled class="cred-input">
             </div>
             <div class="field-row">
               <label>Token / Password (کافی است — username اختیاری)</label>
-              <input name="token" type="password" value="{{ github.token }}" placeholder="github_pat_... یا ghp_...">
+              <input name="token" type="password" value="{{ github.token }}" placeholder="github_pat_... یا ghp_..." disabled class="cred-input">
             </div>
-            <p class="hint">برای ریپوی private: PAT با دسترسی <strong>Contents: Read</strong> بسازید.</p>
-            <button class="primary" type="submit">ذخیره GitHub</button>
+            <p class="hint">برای ریپوی private: PAT با دسترسی <strong>Contents: Read</strong> بسازید. با ذخیره، حالت «با توکن» فعال می‌شود.</p>
+            <button class="primary cred-submit" type="submit" disabled>ذخیره GitHub</button>
           </form>
         </div>
       </details>
@@ -75,8 +117,13 @@
         <input name="branch" type="text" placeholder="برنچ (اختیاری)">
         <input name="port" type="number" min="1024" max="65535" value="3000" placeholder="Frontend port" required>
         <input name="backend_port" type="number" min="1024" max="65535" value="4000" placeholder="Backend port">
-        <input name="github_username" type="text" placeholder="GitHub user (اختیاری)">
-        <input name="github_token" type="password" placeholder="GitHub token (اختیاری)">
+        <div class="span-2 cred-toggle-row">
+          <button type="button" class="toggle-cred-btn toggle-add-cred">توکن اختصاصی این پروژه (اختیاری)</button>
+          <div class="cred-fields add-cred-fields">
+            <input name="github_username" type="text" placeholder="GitHub user" disabled class="cred-input">
+            <input name="github_token" type="password" placeholder="GitHub token" disabled class="cred-input">
+          </div>
+        </div>
         <input class="span-2" name="gitlab_target" type="text" placeholder="GitLab path (group/project)">
         <button class="primary span-2" type="submit">اضافه کن</button>
       </form>
@@ -125,13 +172,18 @@
                   GitLab target
                   <input name="gitlab_target" type="text" value="{{ repo.gitlab_target | default('') }}" placeholder="group/project">
                 </label>
+              </div>
+              <button type="button" class="toggle-cred-btn toggle-repo-cred{% if repo.github_token %} active{% endif %}">
+                {% if repo.github_token %}توکن این پروژه (فعال){% else %}توکن اختصاصی این پروژه{% endif %}
+              </button>
+              <div class="cred-fields repo-cred-fields{% if repo.github_token %} show{% endif %}">
                 <label>
                   GitHub user
-                  <input name="github_username" type="text" value="{{ repo.github_username | default('') }}" placeholder="اختیاری">
+                  <input name="github_username" type="text" value="{{ repo.github_username | default('') }}" placeholder="اختیاری" class="cred-input"{% if not repo.github_token %} disabled{% endif %}>
                 </label>
                 <label>
                   GitHub token
-                  <input name="github_token" type="password" value="{{ repo.github_token | default('') }}" placeholder="اختیاری">
+                  <input name="github_token" type="password" value="{{ repo.github_token | default('') }}" placeholder="اختیاری" class="cred-input"{% if not repo.github_token %} disabled{% endif %}>
                 </label>
               </div>
               <button type="submit">ذخیره تنظیمات</button>
@@ -163,15 +215,253 @@
             </div>
 
             <details class="log-panel" open>
-              <summary>خروجی کنسول</summary>
+              <summary class="log-summary">
+                <span>خروجی کنسول</span>
+                <span class="log-toolbar">
+                  <button type="button" class="mini-btn copy-log-btn" title="کپی لاگ">کپی لاگ</button>
+                </span>
+              </summary>
               <pre class="repo-log">{% if repo.last_log %}{{ repo.last_log }}{% else %}هنوز خروجی ثبت نشده.{% endif %}</pre>
+              <div class="fix-panel" hidden>
+                <div class="fix-head">
+                  <span>اسکریپت رفع مشکل — PowerShell</span>
+                  <button type="button" class="mini-btn copy-fix-btn">کپی اسکریپت</button>
+                </div>
+                <pre class="fix-script"></pre>
+              </div>
             </details>
           </article>
         {% endfor %}
       </div>
     </section>
   </main>
+
+  <button type="button" id="scroll-bottom" class="scroll-bottom-btn" title="رفتن به لاگ‌ها" aria-label="رفتن به پایین">▼</button>
+
   <script>
+    var RUNNER_ROOT = {{ runner_root | tojson }};
+
+    function escapePs(value) {
+      return String(value).replace(/'/g, "''");
+    }
+
+    function isErrorLog(log, status, lastAction) {
+      if (!log || log.indexOf("هنوز خروجی ثبت نشده") >= 0) return false;
+      if (status === "error") return true;
+      if (lastAction && /fail|error/i.test(lastAction)) return true;
+      return /(?:^|\n)(?:error|failed|fatal|denied|not found|exit code [1-9])/im.test(log);
+    }
+
+    function generateFixScript(repoName, log) {
+      var root = escapePs(RUNNER_ROOT);
+      var repo = escapePs(repoName);
+      var lower = (log || "").toLowerCase();
+      var lines = [
+        "# Git Gallery Runner — fix script for: " + repoName,
+        "$RunnerRoot = '" + root + "'",
+        "$RepoName = '" + repo + "'",
+        "$RepoPath = Join-Path $RunnerRoot ('repos\\' + $RepoName)",
+        "",
+      ];
+
+      if (/docker-entrypoint\.sh: no such file|exec \.\/.*\.sh: no such file/.test(lower)) {
+        lines.push(
+          "# CRLF in shell scripts (Windows clone)",
+          "Set-Location $RunnerRoot",
+          "& .\\.venv\\Scripts\\python.exe -c \"from docker_ops import fix_shell_scripts; fix_shell_scripts('repos/$RepoName')\"",
+          "Set-Location $RepoPath",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml up --build -d",
+          ""
+        );
+      } else if (/python3: not found|sh: 1: python3/.test(lower)) {
+        lines.push(
+          "# Dockerfile web-build stage needs python3",
+          "$Dockerfile = Join-Path $RepoPath 'Dockerfile'",
+          "if (Test-Path $Dockerfile) {",
+          "  (Get-Content $Dockerfile -Raw) -replace 'ca-certificates \\\\', 'ca-certificates python3 \\\\' | Set-Content $Dockerfile -NoNewline",
+          "}",
+          "Set-Location $RepoPath",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml up --build -d",
+          ""
+        );
+      } else if (/backend offline|backend روی پورت|connection refused|econnrefused|:4000/.test(lower)) {
+        lines.push(
+          "# Backend not reachable — rebuild stack",
+          "Set-Location $RepoPath",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml ps",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml up --build -d",
+          "Start-Sleep -Seconds 12",
+          "Invoke-RestMethod -Uri 'http://127.0.0.1:4000/api/health' -TimeoutSec 5",
+          ""
+        );
+      } else if (/authentication failed|403|401|invalid username or token/.test(lower)) {
+        lines.push(
+          "# GitHub auth — set PAT in dashboard (Settings > GitHub)",
+          "Write-Host 'Dashboard: http://127.0.0.1:8080 — PAT needs Contents: Read (private) or Write (push)'",
+          ""
+        );
+      } else if (/cannot connect to the docker daemon|docker desktop|error during connect/.test(lower)) {
+        lines.push(
+          "# Start Docker Desktop",
+          "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'",
+          "Write-Host 'Wait for Docker to start, then Run/Build again in dashboard.'",
+          ""
+        );
+      } else if (/port is already allocated|address already in use/.test(lower)) {
+        lines.push(
+          "# Port conflict — stop project containers first",
+          "Set-Location $RepoPath",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml down --remove-orphans",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml up --build -d",
+          ""
+        );
+      } else if (/expecting value: line 1|json\.load/.test(lower)) {
+        lines.push(
+          "# Corrupt local marker — remove and rebuild",
+          "Remove-Item (Join-Path $RepoPath '.runner-prereqs.json') -ErrorAction SilentlyContinue",
+          "Set-Location $RunnerRoot",
+          "Write-Host 'Use Pull + Rebuild in dashboard.'",
+          ""
+        );
+      } else {
+        lines.push(
+          "# Generic rebuild",
+          "Set-Location $RepoPath",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml down --remove-orphans",
+          "docker compose -p $RepoName -f docker-compose.yml -f .runner-compose.override.yml up --build -d",
+          ""
+        );
+      }
+
+      lines.push("Write-Host 'Done. Check http://127.0.0.1:8080'");
+      return lines.join("\r\n");
+    }
+
+    function updateFixPanel(card) {
+      var logEl = card.querySelector(".repo-log");
+      var fixPanel = card.querySelector(".fix-panel");
+      var fixScript = card.querySelector(".fix-script");
+      if (!logEl || !fixPanel || !fixScript) return;
+
+      var log = logEl.textContent || "";
+      var status = card.getAttribute("data-status") || "";
+      var meta = card.querySelector(".meta span");
+      var lastAction = meta ? meta.textContent.replace("آخرین عملیات: ", "") : "";
+
+      if (isErrorLog(log, status, lastAction)) {
+        fixScript.textContent = generateFixScript(card.getAttribute("data-repo"), log);
+        fixPanel.hidden = false;
+      } else {
+        fixPanel.hidden = true;
+        fixScript.textContent = "";
+      }
+    }
+
+    function copyText(text, btn) {
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(function () {
+        if (!btn) return;
+        var old = btn.textContent;
+        btn.textContent = "کپی شد ✓";
+        setTimeout(function () { btn.textContent = old; }, 1400);
+      }).catch(function () {
+        window.prompt("کپی کنید:", text);
+      });
+    }
+
+    document.querySelectorAll(".repo-card").forEach(function (card) {
+      updateFixPanel(card);
+
+      var copyLogBtn = card.querySelector(".copy-log-btn");
+      if (copyLogBtn) {
+        copyLogBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var log = card.querySelector(".repo-log");
+          copyText(log ? log.textContent : "", copyLogBtn);
+        });
+      }
+
+      var copyFixBtn = card.querySelector(".copy-fix-btn");
+      if (copyFixBtn) {
+        copyFixBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var script = card.querySelector(".fix-script");
+          copyText(script ? script.textContent : "", copyFixBtn);
+        });
+      }
+    });
+
+    document.getElementById("scroll-bottom").addEventListener("click", function () {
+      var targets = document.querySelectorAll(".log-panel");
+      var target = targets.length ? targets[targets.length - 1] : null;
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "end" });
+      } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      }
+    });
+
+    function activateCredForm(form, btn) {
+      if (!form) return;
+      var show = !form.classList.contains("show");
+      form.classList.toggle("show", show);
+      form.querySelectorAll(".cred-input, .cred-submit").forEach(function (el) {
+        el.disabled = !show;
+      });
+      if (btn) {
+        btn.setAttribute("aria-expanded", show ? "true" : "false");
+        if (show && btn.id === "toggle-global-github-cred") {
+          btn.textContent = "بستن یوزر و توکن";
+        } else if (btn.id === "toggle-global-github-cred") {
+          btn.textContent = "فعال‌سازی یوزر و توکن";
+        }
+      }
+    }
+
+    var globalCredBtn = document.getElementById("toggle-global-github-cred");
+    var globalCredForm = document.getElementById("global-github-cred-form");
+    if (globalCredBtn && globalCredForm) {
+      if (globalCredForm.classList.contains("show")) {
+        globalCredForm.querySelectorAll(".cred-input, .cred-submit").forEach(function (el) {
+          el.disabled = false;
+        });
+      }
+      globalCredBtn.addEventListener("click", function () {
+        activateCredForm(globalCredForm, globalCredBtn);
+      });
+    }
+
+    document.querySelectorAll(".toggle-add-cred").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var wrap = btn.closest(".cred-toggle-row");
+        var fields = wrap ? wrap.querySelector(".add-cred-fields") : null;
+        if (!fields) return;
+        var show = !fields.classList.contains("show");
+        fields.classList.toggle("show", show);
+        fields.querySelectorAll(".cred-input").forEach(function (el) {
+          el.disabled = !show;
+        });
+        btn.classList.toggle("active", show);
+        btn.textContent = show ? "بستن توکن پروژه" : "توکن اختصاصی این پروژه (اختیاری)";
+      });
+    });
+
+    document.querySelectorAll(".toggle-repo-cred").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var form = btn.closest(".port-form");
+        var fields = form ? form.querySelector(".repo-cred-fields") : null;
+        if (!fields) return;
+        var show = !fields.classList.contains("show");
+        fields.classList.toggle("show", show);
+        fields.querySelectorAll(".cred-input").forEach(function (el) {
+          el.disabled = !show;
+        });
+        btn.classList.toggle("active", show);
+        btn.textContent = show ? "بستن توکن پروژه" : "توکن اختصاصی این پروژه";
+      });
+    });
     document.querySelectorAll(".repo-card").forEach(function (card) {
       var portForm = card.querySelector(".port-form");
       var restartForm = card.querySelector('form[action*="/restart/"]');
@@ -250,6 +540,7 @@
               if (log) {
                 log.textContent = repo.last_log || "هنوز خروجی ثبت نشده.";
               }
+              updateFixPanel(card);
               var meta = card.querySelector(".meta");
               if (meta) {
                 meta.innerHTML =

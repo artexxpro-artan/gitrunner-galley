@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from changelog import VERSION, VERSION_HISTORY
 from dockerize import ensure_docker_stack, has_compose, infer_stack_from_compose
 from docker_ops import (
     compose_file_names,
@@ -34,7 +35,6 @@ GITLAB_JSON = os.path.join(DATA_DIR, "gitlab.json")
 GITHUB_JSON = os.path.join(DATA_DIR, "github.json")
 RUNNER_PID_FILE = os.path.join(DATA_DIR, "runner.pid")
 OVERRIDE_FILE = ".runner-compose.override.yml"
-VERSION = "0.2.0"
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(REPOS_DIR, exist_ok=True)
@@ -101,11 +101,12 @@ def save_gitlab(data):
 
 def load_github():
     if not os.path.exists(GITHUB_JSON):
-        return {"username": "", "token": ""}
+        return {"username": "", "token": "", "mode": "public"}
     with open(GITHUB_JSON, "r", encoding="utf-8") as f:
         data = json.load(f)
     data.setdefault("username", "")
     data.setdefault("token", "")
+    data.setdefault("mode", "public")
     return data
 
 
@@ -117,10 +118,19 @@ def save_github(data):
 def github_credentials(repo):
     username = (repo.get("github_username") or "").strip()
     token = (repo.get("github_token") or "").strip()
-    if not token:
-        global_cfg = load_github()
-        username = username or global_cfg.get("username", "").strip()
-        token = global_cfg.get("token", "").strip()
+    if token:
+        if not username:
+            username = "x-access-token"
+        if token.startswith(("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")):
+            username = "x-access-token"
+        return username, token
+
+    global_cfg = load_github()
+    if global_cfg.get("mode", "public") != "auth":
+        return "", ""
+
+    username = username or global_cfg.get("username", "").strip()
+    token = global_cfg.get("token", "").strip()
     if token and not username:
         username = "x-access-token"
     if token and token.startswith(("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")):
@@ -653,7 +663,15 @@ def index(request: Request):
     github = load_github()
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "repos": repos, "gitlab": gitlab, "github": github, "version": VERSION},
+        {
+            "request": request,
+            "repos": repos,
+            "gitlab": gitlab,
+            "github": github,
+            "version": VERSION,
+            "version_history": VERSION_HISTORY,
+            "runner_root": BASE_DIR,
+        },
     )
 
 
@@ -818,15 +836,25 @@ def gitlab_settings(
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/github/mode")
+def github_mode(mode: str = Form("public")):
+    current = load_github()
+    current["mode"] = "auth" if mode == "auth" else "public"
+    save_github(current)
+    return RedirectResponse("/", status_code=303)
+
+
 @app.post("/github/settings")
 def github_settings(
     username: str = Form(""),
     token: str = Form(""),
+    enable_auth: str = Form(""),
 ):
     current = load_github()
     save_github({
         "username": username.strip() or current.get("username", ""),
         "token": token.strip() or current.get("token", ""),
+        "mode": "auth" if enable_auth == "1" or token.strip() else current.get("mode", "public"),
     })
     return RedirectResponse("/", status_code=303)
 

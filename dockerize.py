@@ -77,6 +77,13 @@ def _has_python_app(path):
     )
 
 
+def _has_laravel(path):
+    return (
+        os.path.exists(os.path.join(path, "artisan"))
+        and os.path.exists(os.path.join(path, "composer.json"))
+    )
+
+
 def _python_entrypoint(path):
     for module in ("app", "main", "wsgi"):
         if os.path.exists(os.path.join(path, f"{module}.py")):
@@ -107,6 +114,140 @@ RUN npm install
 COPY . .
 {build_step}EXPOSE {port}
 {command}
+"""
+
+
+def _laravel_dockerfile():
+    return f"""{GENERATED_MARKER} (Laravel)
+FROM php:8.3-apache
+
+RUN apt-get update && apt-get install -y \\
+    git curl unzip libpng-dev libjpeg62-turbo-dev libfreetype6-dev \\
+    libzip-dev libonig-dev libxml2-dev libicu-dev \\
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \\
+    && docker-php-ext-install -j$(nproc) pdo_mysql mbstring exif pcntl bcmath gd zip intl opcache calendar \\
+    && a2enmod rewrite \\
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \\
+    && apt-get install -y nodejs \\
+    && rm -rf /var/lib/apt/lists/*
+
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+RUN sed -ri -e 's!/var/www/html!${{APACHE_DOCUMENT_ROOT}}!g' /etc/apache2/sites-available/*.conf \\
+    && sed -ri -e 's!/var/www/!${{APACHE_DOCUMENT_ROOT}}!g' /etc/apache2/conf-available/*.conf
+
+WORKDIR /var/www/html
+COPY . .
+RUN git config --global --add safe.directory /var/www/html \\
+    && composer install --no-interaction --prefer-dist --optimize-autoloader \\
+    && npm install \\
+    && npm run build \\
+    && chown -R www-data:www-data storage bootstrap/cache
+
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+EXPOSE 80
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["apache2-foreground"]
+"""
+
+
+def _laravel_compose(port=80):
+    return f"""{GENERATED_MARKER} (Laravel)
+services:
+  mysql:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: laravel-crm
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-psecret']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  app:
+    build: .
+    ports:
+      - '{port}:{port}'
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_URL: http://localhost:{port}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: laravel-crm
+      DB_USERNAME: root
+      DB_PASSWORD: secret
+    volumes:
+      - app_storage:/var/www/html/storage
+
+volumes:
+  mysql_data:
+  app_storage:
+"""
+
+
+def _laravel_entrypoint():
+    return """#!/bin/sh
+set -e
+
+cd /var/www/html
+
+echo "Waiting for MySQL at ${DB_HOST}..."
+until php -r "
+try {
+    new PDO(
+        'mysql:host=${DB_HOST};port=${DB_PORT:-3306}',
+        '${DB_USERNAME}',
+        '${DB_PASSWORD}'
+    );
+    exit(0);
+} catch (Throwable \\$e) {
+    exit(1);
+}
+" 2>/dev/null; do
+    sleep 2
+done
+
+if [ ! -f .env ]; then
+    cp .env.example .env
+fi
+
+set_env() {
+    key="$1"
+    val="$2"
+    if grep -q "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${val}|" .env
+    else
+        printf '%s=%s\\n' "$key" "$val" >> .env
+    fi
+}
+
+set_env APP_URL "${APP_URL:-http://localhost}"
+set_env DB_CONNECTION "${DB_CONNECTION:-mysql}"
+set_env DB_HOST "${DB_HOST:-mysql}"
+set_env DB_PORT "${DB_PORT:-3306}"
+set_env DB_DATABASE "${DB_DATABASE:-laravel-crm}"
+set_env DB_USERNAME "${DB_USERNAME:-root}"
+set_env DB_PASSWORD "${DB_PASSWORD:-secret}"
+
+if [ ! -f storage/installed ]; then
+    echo "Running Laravel installer..."
+    php artisan krayin-crm:install --skip-env-check --skip-admin-creation --no-interaction \\
+        || php artisan migrate --force
+    echo "Application installed" > storage/installed
+fi
+
+exec "$@"
 """
 
 
@@ -145,6 +286,9 @@ def detect_layout(path):
 
     if frontend and backend and (_has_package(path, frontend) or _has_package(path, backend)):
         return {"kind": "multi", "frontend": frontend, "backend": backend}
+
+    if _has_laravel(path):
+        return {"kind": "laravel", "port": 80}
 
     if _has_package(path):
         pkg = _read_json(os.path.join(path, "package.json"))
@@ -295,6 +439,14 @@ services:
 """
         _write_text(os.path.join(path, COMPOSE_FILE), compose)
         logs.extend(["created Dockerfile", f"created {COMPOSE_FILE}"])
+        return True, {"kind": "single", "service": "app", "container_port": port}, "\n".join(logs) + "\n"
+
+    if layout["kind"] == "laravel":
+        port = layout["port"]
+        _write_text(os.path.join(path, "docker", "entrypoint.sh"), _laravel_entrypoint())
+        _write_text(os.path.join(path, "Dockerfile"), _laravel_dockerfile())
+        _write_text(os.path.join(path, COMPOSE_FILE), _laravel_compose(port))
+        logs.extend(["created docker/entrypoint.sh", "created Dockerfile", f"created {COMPOSE_FILE}"])
         return True, {"kind": "single", "service": "app", "container_port": port}, "\n".join(logs) + "\n"
 
     if layout["kind"] == "python":
